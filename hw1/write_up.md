@@ -33,7 +33,7 @@ int main() {
 }
 ```
 
-Open the device file named `/dev/rootkit` in read-write mode.
+To test the module, our userspace program open the device file named `/dev/rootkit` in read-write mode.
 
 Send an `ioctl` command to the opened device file to hide/unhide the module.
 
@@ -131,7 +131,7 @@ int main() {
 }
 ```
 
-The program constructs two masquerade rules, each specifying an original process name and a corresponding new name (one where the new name is longer than the original, and one where it is shorter).
+To test the module, the userspace program constructs two masquerade rules, each specifying an original process name and a corresponding new name (one where the new name is longer than the original, and one where it is shorter).
 
 These rules are packed into a request structure and sent to the kernel module via an `ioctl` call.
 
@@ -168,7 +168,7 @@ Finally, call `unregister_kprobe(&kp)` to remove the kprobe.
     update_mapping_prot_ptr = (update_mapping_prot_t)kallsyms_lookup_name_ptr("update_mapping_prot");
     ...
 ```
-With `kallsyms_lookup_name_ptr`, retrieve the addresses of `__start_rodata` and `__end_rodata` to identify the `.rodata` section in the kernel. Then, compute the size by subtracting the start address from the end address.
+With `kallsyms_lookup_name_ptr`, retrieve the addresses of `__start_rodata` and `__end_rodata` to identify the `.rodata` section in the kernel. Then, compute the size by subtracting the start address from the end address. These variables will be used for modifying access permissions for `.rodata` section.
 
 Retrieve the address of the `update_mapping_prot` function in the kernel and store it in `update_mapping_prot_ptr`. This pointer can then be used to temporarily modify the access permissions of read-only kernel sections, such as `.rodata`.
 
@@ -246,11 +246,11 @@ Allocate memory for a `struct filter_list_item`.
     sys_call_table_ptr[user_filter.syscall_nr] = hooked_sys_call[user_filter.syscall_nr];
     update_mapping_prot_ptr(__pa(start_rodata), start_rodata, section_size, PAGE_KERNEL_RO);
 ```
-Make rodata writable by utilizing `update_mapping_prot_ptr`.
+Make `.rodata` writable by utilizing `update_mapping_prot_ptr`.
 
 Replace the system call at index `user_filter.syscall_nr` in the system call table with the corresponding hooked version from `hooked_sys_call`.
 
-Make rodata readonly by utilizing `update_mapping_prot_ptr`.
+Make `.rodata` readonly by utilizing `update_mapping_prot_ptr`.
 ```c
     memcpy(&new_filter->filter, &user_filter, sizeof(struct filter_info));
     INIT_LIST_HEAD(&new_filter->list);
@@ -301,11 +301,11 @@ static void __exit rootkit_exit(void) {
     ...
 }
 ```
-Make rodata writable.
+Make `.rodata` writable.
 
-Redefines the `__SYSCALL` macro to restore original system calls: for each system call number, if the current function pointer in `sys_call_table_ptr` differs from the original, it is replaced with the original. This macro is applied by including ``<asm/unistd.h>``, which expands all defined system calls.
+Redefines the `__SYSCALL` macro to restore original system calls: for each system call number, if the current function pointer in `sys_call_table_ptr` changes (differs from the original), it is replaced with the original. This macro is applied by including ``<asm/unistd.h>``, which expands all defined system calls.
 
-Make rodata readonly.
+Make `.rodata` readonly.
 
 Finally, the function iterates through the `filter_list_head` linked list using `list_for_each_entry_safe`, removes each entry from the list, and frees its memory using `kfree`.
 
@@ -339,9 +339,9 @@ int main(int argc, char *argv[]) {
     ...
 }
 ```
-Expect three arguments: an action (add or remove), a process name, and a system call number. If not enough arguments are provided, it prints usage instructions.
+Our userspace test program expect three arguments: an action (add or remove), a process name, and a system call number. If not enough arguments are provided, it prints usage instructions.
 
-Parse the arguments and constructs a `filter_info` structure, setting the `syscall_nr` and copying the process name into the `comm` field.
+Then, parse the arguments and constructs a `filter_info` structure, setting the `syscall_nr` and copying the process name into the `comm` field.
 
 Depending on the action, it issues an `ioctl` call to either add or remove the filter via `IOCTL_ADD_FILTER` or `IOCTL_REMOVE_FILTER`.
 
