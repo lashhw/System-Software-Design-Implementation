@@ -1,6 +1,6 @@
 ## CSIE 5374 Assignment 1 Write-up
 
-#### Hide/Unhide module
+### Hide/Unhide module
 ```c
 // rootkit.c
 static bool module_is_hidden = false;
@@ -37,7 +37,7 @@ Open the device file named `/dev/rootkit` in read-write mode.
 
 Send an `ioctl` command to the opened device file to hide/unhide the module.
 
-#### Masquerade process name
+### Masquerade process name
 ```c
 // rootkit.c
 static struct masq_proc_req req;
@@ -135,7 +135,7 @@ The program constructs two masquerade rules, each specifying an original process
 
 These rules are packed into a request structure and sent to the kernel module via an `ioctl` call.
 
-#### Filter syscall
+### Filter syscall
 
 ```c
 // rootkit.c
@@ -186,6 +186,7 @@ Retrieve the address of the `update_mapping_prot` function in the kernel and sto
 The kernel symbol `sys_call_table` is resolved using `kallsyms_lookup_name_ptr`, and the returned address is cast to a `syscall_fn_t*` type and stored in `sys_call_table_ptr`. This allows subsequent access to or modification of the system call table.
 
 The `__SYSCALL` macro is redefined so that, during compilation, each original system call function is stored in the `original_sys_call` array, while the corresponding hook version (`hooked_##sym`) is stored in the `hooked_sys_call` array. When ``<asm/unistd.h>`` is included, all system calls are expanded based on this new macro definition.
+
 `hooked_##sym` is defined as below:
 ```c
 #define HOOKED_SYSCALL(nr, sym) \
@@ -344,7 +345,7 @@ Parse the arguments and constructs a `filter_info` structure, setting the `sysca
 
 Depending on the action, it issues an `ioctl` call to either add or remove the filter via `IOCTL_ADD_FILTER` or `IOCTL_REMOVE_FILTER`.
 
-##### Bonus: blocking multiple syscalls for a single process
+### Bonus: blocking multiple syscalls for a single process
 
 We will block `getcwd` (syscall 17) and `getuid` (syscall 174) for `python`.
 Before enabling syscall filtering, these two commands work normally:
@@ -388,7 +389,7 @@ $ python -c 'import os; print(os.getuid())'
 -1
 ```
 
-##### Bonus: blocking specific syscalls across multiple processes
+### Bonus: blocking specific syscalls across multiple processes
 
 We will block `getdents64` (syscall 61) for `ps` and `htop`.
 Before enabling syscall filtering, these two commands work normally:
@@ -415,7 +416,7 @@ $ htop
 (no process is displayed in htop)
 ```
 
-#### Questions
+### Questions
 1. The core concept of Return-Oriented Programming is to extract gadgets from existing kernel code. These gadgets are typically instruction sequences that end with a `ret` instruction. Attackers use `ret` to jump from one gadget to the next in a controlled manner. Although each gadget performs only a simple operation, chaining them together enables the execution of complex logic.
 
     The system call filtering based approach is vulnerable to the so called Returned Oriented Programming attack, because attackers can repeatedly leverage existing kernel code (gadgets) to bypass intercepted syscalls.
@@ -428,7 +429,8 @@ $ htop
 
 2. 
 
-#### Reference
+### Reference
 
 [linux kprobe使用-CSDN博客](https://blog.csdn.net/qq_42931917/article/details/129225214)
+
 [Linux 内核函数kallsyms_lookup_name_linux 5.10 内核符号查找函数-CSDN博客](https://blog.csdn.net/weixin_45030965/article/details/132497956)
