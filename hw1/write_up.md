@@ -1,4 +1,4 @@
-## CSIE 5374 Assignment 1 Write-up
+## CSIE 5374 Assignment 1 Write-up, Team16
 
 ### Hide/Unhide module
 ```c
@@ -36,6 +36,21 @@ int main() {
 To test the module, our userspace program open the device file named `/dev/rootkit` in read-write mode.
 
 Send an `ioctl` command to the opened device file to hide/unhide the module.
+
+```shell
+$ gcc rootkit_hide.c -o rootkit_hide
+$ lsmod
+Module                  Size  Used by
+rootkit               118784  0
+$ sudo ./rootkit_hide
+$ lsmod
+Module                  Size  Used by
+$ sudo ./rootkit_hide
+$ lsmod
+Module                  Size  Used by
+rootkit               118784  0
+```
+
 
 ### Masquerade process name
 ```c
@@ -134,6 +149,26 @@ int main() {
 To test the module, the userspace program constructs two masquerade rules, each specifying an original process name and a corresponding new name (one where the new name is longer than the original, and one where it is shorter).
 
 These rules are packed into a request structure and sent to the kernel module via an `ioctl` call.
+
+```shell
+$ gcc rootkit_masq.c -o rootkit_masq
+$ bash
+$ sleep inf &
+[1] 870
+$ ps
+    PID TTY          TIME CMD
+    740 pts/0    00:00:00 bash
+    864 pts/0    00:00:00 bash
+    870 pts/0    00:00:00 sleep
+    871 pts/0    00:00:00 ps
+$ sudo ./rootkit_masq
+$ ps
+    PID TTY          TIME CMD
+    740 pts/0    00:00:00 owo
+    864 pts/0    00:00:00 owo
+    870 pts/0    00:00:00 sleep
+    887 pts/0    00:00:00 ps
+```
 
 ### Filter syscall
 
@@ -427,10 +462,53 @@ $ htop
     * Control Flow Integrity (CFI): CFI enforces strict control over program execution, ensuring function calls only jump to legitimate addresses, effectively preventing ROP attacks.
     * Address Space Layout Randomization (ASLR): ASLR randomizes the memory layout of kernel code, making it harder for attackers to predict addresses and locate useful gadgets.
 
-2. 
+2. The `ptrace()` system call provides a means by which one process (the "tracer") may observe and control the execution of another process (the "tracee"), and examine and change the tracee's memory and registers.  It is primarily used to implement breakpoint debugging and system call tracing.
+
+    The advantages and disadvantages of the filtering approach implemented by the module in this assignment, compared to an approach based on `ptrace`,  are as follows:
+
+    **Filtering Approach via Kernel Module**
+
+    Advantages
+    * Minimal performance overhead per syscall, since filtering is done in-kernel with direct function calls.
+    * Provides system-wide syscall interception, allowing enforcement of global policies without needing to attach to individual processes.
+
+    Disadvantages
+    * Difficult to implement and maintain, requiring unsafe hacks and deep kernel knowledge, with any mistake potentially crashing the system.
+    * Provides limited flexibility for development and fine-grained control. It is better suited for implementing broad, static system-wide policies rather than dynamic or process-specific monitoring.
+
+    **ptrace-Based Approach**
+
+    Advantages
+    * Uses a stable, user-space API and doesn’t require kernel modifications, making it safer, more portable, and easier to manage compared to kernel hooking.
+    * Provides high flexibility for per-process monitoring and policy customization in user space, allowing complex logic without kernel changes.
+
+    Disadvantages
+    * High performance overhead results from frequent context switches and signal handling, as each system call forces the traced process to trap into the kernel and wake the tracer.
+    * Limited to per-process monitoring and cannot effectively cover the whole system, making it unsuitable for global filtering or auditing.
+
+
+
+
+
+
 
 ### Reference
 
 [linux kprobe使用-CSDN博客](https://blog.csdn.net/qq_42931917/article/details/129225214)
 
 [Linux 内核函数kallsyms_lookup_name_linux 5.10 内核符号查找函数-CSDN博客](https://blog.csdn.net/weixin_45030965/article/details/132497956)
+
+[Day12－Basic ROP](https://ithelp.ithome.com.tw/m/articles/10358514)
+
+[Return-Oriented Rootkits:
+Bypassing Kernel Code Integrity Protection Mechanisms](https://www.usenix.org/legacy/event/sec09/tech/full_papers/hund.pdf)
+
+[ROP（Return Oriented Programming）](https://www.cnblogs.com/suv789/p/18589241)
+
+[ptrace(2) — Linux manual page](https://man7.org/linux/man-pages/man2/ptrace.2.html)
+
+[Monitoring system calls (in a reliable and secure way)](https://security.stackexchange.com/questions/8485/monitoring-system-calls-in-a-reliable-and-secure-way#:~:text=One%20portable%20method%20is%20to,at%20the%20cost%20of%20compatibility)
+
+
+
+
