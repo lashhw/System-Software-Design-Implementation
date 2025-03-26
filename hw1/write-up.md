@@ -399,7 +399,7 @@ $ head -n1 /etc/os-release
 ```
 
 Remove syscall filtering, and we see it print normally as before:
-```
+```shell
 $ sudo ./rootkit_filter remove head 64
 $ head -n1 /etc/os-release
 PRETTY_NAME="Ubuntu 22.04.5 LTS"
