@@ -266,7 +266,7 @@ case IOCTL_ADD_FILTER:
         break;
     }
 ```
-Copy the `filter_info` structure sent from user space into the kernel-space variable `user_filter`.
+For `IOCTL_ADD_FILTER`, copy the `filter_info` structure sent from user space into the kernel-space variable `user_filter`.
 ```c
     new_filter = kmalloc(sizeof(struct filter_list_item), GFP_KERNEL);
     if (!new_filter) {
@@ -313,7 +313,7 @@ case IOCTL_REMOVE_FILTER:
 
     break;
 ```
-Iterates through the `filter_list_head` linked list using `list_for_each_entry_safe`.
+For `IOCTL_REMOVE_FILTER`, iterates through the `filter_list_head` linked list using `list_for_each_entry_safe`.
 
 For each filter entry, it checks whether the `syscall_nr` and `comm` (process name) match the values in `user_filter`. If a match is found, the entry is removed from the list using `list_del`, its memory is freed using `kfree`.
 
