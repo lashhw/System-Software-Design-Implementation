@@ -380,6 +380,31 @@ Then, parse the arguments and constructs a `filter_info` structure, setting the 
 
 Depending on the action, it issues an `ioctl` call to either add or remove the filter via `IOCTL_ADD_FILTER` or `IOCTL_REMOVE_FILTER`.
 
+To test the module, we will block `write` (syscall 64) for `head`.
+Before enabling syscall filtering, this command works normally:
+```shell
+$ head -n1 /etc/os-release
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+```
+
+Then apply syscall blocking via userspace program `rootkit_filter.c`:
+```shell
+$ gcc rootkit_filter.c -o rootkit_filter
+$ sudo ./rootkit_filter add head 64
+```
+
+Running the same command as before, we see nothing is printed:
+```shell
+$ head -n1 /etc/os-release
+```
+
+Remove syscall filtering, and we see it print normally as before:
+```
+$ sudo ./rootkit_filter remove head 64
+$ head -n1 /etc/os-release
+PRETTY_NAME="Ubuntu 22.04.5 LTS"
+```
+
 ### Bonus: blocking multiple syscalls for a single process
 
 We will block `getcwd` (syscall 17) and `getuid` (syscall 174) for `python`.
