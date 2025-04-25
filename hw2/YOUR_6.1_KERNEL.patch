@@ -34,10 +34,10 @@ index 45fa180cc..ddb48fd54 100644
  /*
   * 32 bit systems traditionally used different
 diff --git a/kernel/sys.c b/kernel/sys.c
-index 5fd54bf0e..a2f902ede 100644
+index 5fd54bf0e..7f9665599 100644
 --- a/kernel/sys.c
 +++ b/kernel/sys.c
-@@ -2725,6 +2725,97 @@ SYSCALL_DEFINE1(sysinfo, struct sysinfo __user *, info)
+@@ -2725,6 +2725,102 @@ SYSCALL_DEFINE1(sysinfo, struct sysinfo __user *, info)
  	return 0;
  }
  
@@ -99,6 +99,11 @@ index 5fd54bf0e..a2f902ede 100644
 +		pr_info("remap_page_table: pgd va=0x%lx, pa=0x%lx, pfn=0x%lx\n",
 +				(unsigned long)pgd_va, pgd_pa, pfn_to_map);
 +	} else {
++		if (!pfn_valid(kargs.pfn)) {
++			pr_err("remap_page_table: invalid pfn\n");
++			ret = -EINVAL;
++			goto out_put_mm;
++		}
 +		pfn_to_map = kargs.pfn;
 +	}
 +
