@@ -34,7 +34,7 @@ index 45fa180cc..ddb48fd54 100644
  /*
   * 32 bit systems traditionally used different
 diff --git a/kernel/sys.c b/kernel/sys.c
-index 5fd54bf0e..d6df9f22b 100644
+index 5fd54bf0e..a2f902ede 100644
 --- a/kernel/sys.c
 +++ b/kernel/sys.c
 @@ -2725,6 +2725,97 @@ SYSCALL_DEFINE1(sysinfo, struct sysinfo __user *, info)
@@ -115,10 +115,10 @@ index 5fd54bf0e..d6df9f22b 100644
 +		goto release_mm_lock;
 +	}
 +
-+	ret = remap_pfn_range(remap_vma, kargs.remap_vaddr, pfn_to_map, PAGE_SIZE, remap_vma->vm_page_prot);
-+	if (ret) {
++	ret = remap_pfn_range(remap_vma, kargs.remap_vaddr, pfn_to_map,
++						  PAGE_SIZE, remap_vma->vm_page_prot);
++	if (ret)
 +		pr_err("remap_page_table: remap_pfn_range failed\n");
-+	}
 +
 +release_mm_lock:
 +	mmap_read_unlock(current->mm);
