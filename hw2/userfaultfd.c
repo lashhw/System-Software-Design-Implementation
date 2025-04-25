@@ -57,7 +57,16 @@ struct handler_args {
     int uffd;
 };
 
-static inline unsigned long get_index(unsigned long va, unsigned int level) {
+struct pte_tracker_t {
+    unsigned long table_pfn;
+    unsigned long table_idx;
+    uint64_t original_entry;
+};
+
+struct pte_tracker_t *trackers = NULL;
+size_t tracker_size = 0;
+
+unsigned long get_index(unsigned long va, unsigned int level) {
     int shift;
     switch (level) {
         case LEVEL_PGD: shift = VA_PGD_SHIFT; break;
@@ -92,6 +101,29 @@ uint64_t *remap_table(unsigned int level, unsigned long pfn) {
         return NULL;
     }
     return (uint64_t *)mapped_addr;
+}
+
+void add_tracker(struct pte_tracker_t tracker) {
+    tracker_size++;
+    trackers = realloc(trackers, tracker_size * sizeof(struct pte_tracker_t));
+    if (!trackers) {
+        perror("realloc(trackers) failed");
+        exit(EXIT_FAILURE);
+    }
+    trackers[tracker_size - 1] = tracker;
+}
+
+void unmap_user_pte() {
+    for (int i = 0; i < tracker_size; i++) {
+        struct pte_tracker_t tracker = trackers[i];
+        uint64_t *table_ptr = remap_table(LEVEL_PTE, tracker.table_pfn);
+        if (!table_ptr) {
+            perror("invalid table_ptr");
+            exit(EXIT_FAILURE);
+        }
+        table_ptr[tracker.table_idx] = tracker.original_entry;
+    }
+    tracker_size = 0;
 }
 
 unsigned long parse_table_entry(uint64_t entry) {
@@ -146,10 +178,17 @@ void map_fault_va_to_pa(unsigned long fault_va, unsigned long pa) {
         unsigned long index = get_index(fault_va, level);
         uint64_t entry = table_ptr[index];
 
+        unsigned long table_pfn = current_pfn;
         current_pfn = parse_table_entry(entry);
         if (!current_pfn) {
             if (level == 3) {
                 table_ptr[index] = PTE_FLAG | (target_pfn << PTE_FLAG_SHIFT);
+                struct pte_tracker_t tracker = {
+                    .table_pfn = table_pfn,
+                    .table_idx = index,
+                    .original_entry = entry
+                };
+                add_tracker(tracker);
             } else {
                 printf("invalid pfn @ level %d\n", level);
                 return;
@@ -274,6 +313,7 @@ int main(int argc, char **argv) {
     }
 
     close(uffd);
+    unmap_user_pte();
     munmap(region, 10 * PAGE_SIZE);
 
     printf("Program completed successfully\n");
