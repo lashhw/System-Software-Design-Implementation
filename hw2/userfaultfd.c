@@ -13,16 +13,36 @@
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <stdbool.h>
 
 #define PAGE_SHIFT 12
 #define PAGE_SIZE (1UL << PAGE_SHIFT)
-#define BIT_MASK ((1UL << 9) - 1)    // 9 bits for indexing (512 entries)
+#define PAGE_MASK (PAGE_SIZE - 1)
 
 // Page table levels
 #define LEVEL_PGD 0
 #define LEVEL_PUD 1
 #define LEVEL_PMD 2
 #define LEVEL_PTE 3
+#define NUM_LEVELS 4
+
+#define __NR_remap_page_table 451
+
+#define ENTRIES_PER_TABLE (PAGE_SIZE / sizeof(uint64_t))
+#define VA_PGD_SHIFT      39
+#define VA_PUD_SHIFT      30
+#define VA_PMD_SHIFT      21
+#define VA_PTE_SHIFT      12
+#define VA_INDEX_MASK     0x1FF
+
+#define TABLE_ENTRY_MASK    0x3
+#define TABLE_ENTRY_VALUE   0x3
+#define NEXT_LVL_ADDR_SHIFT 12
+#define NEXT_LVL_ADDR_MASK  (((1UL << (48 - NEXT_LVL_ADDR_SHIFT)) - 1) << NEXT_LVL_ADDR_SHIFT)
+#define PTE_ADDR_MASK       NEXT_LVL_ADDR_MASK
+
+#define PTE_FLAG       0x00e8000000000f43UL
+#define PTE_FLAG_SHIFT 12
 
 // Arguments for exposing page tables
 struct expose_pgtbl_args {
@@ -37,12 +57,106 @@ struct handler_args {
     int uffd;
 };
 
-unsigned long va_to_pa(unsigned long va) {
-    return 0;
+static inline unsigned long get_index(unsigned long va, unsigned int level) {
+    int shift;
+    switch (level) {
+        case LEVEL_PGD: shift = VA_PGD_SHIFT; break;
+        case LEVEL_PUD: shift = VA_PUD_SHIFT; break;
+        case LEVEL_PMD: shift = VA_PMD_SHIFT; break;
+        case LEVEL_PTE: shift = VA_PTE_SHIFT; break;
+        default: return -1;
+    }
+    return (va >> shift) & VA_INDEX_MASK;
 }
 
-void map_fault_va_to_pa(unsigned long va, unsigned long pte) {
-    return;
+uint64_t *remap_table(unsigned int level, unsigned long pfn) {
+    void *mapped_addr;
+    struct expose_pgtbl_args args;
+    long ret;
+
+    mapped_addr = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    if (mapped_addr == MAP_FAILED) {
+        perror("mmap failed in remap_table");
+        return NULL;
+    }
+
+    args.pid = getpid();
+    args.remap_vaddr = (unsigned long)mapped_addr;
+    args.level = level;
+    args.pfn = pfn;
+
+    ret = syscall(__NR_remap_page_table, &args);
+    if (ret != 0) {
+        perror("remap_page_table failed");
+        munmap(mapped_addr, PAGE_SIZE);
+        return NULL;
+    }
+    return (uint64_t *)mapped_addr;
+}
+
+unsigned long parse_table_entry(uint64_t entry) {
+    if ((entry & TABLE_ENTRY_MASK) == TABLE_ENTRY_VALUE) {
+        unsigned long next_lvl_addr = entry & NEXT_LVL_ADDR_MASK;
+        unsigned long next_pfn = next_lvl_addr >> NEXT_LVL_ADDR_SHIFT;
+        return next_pfn;
+    } else {
+        return 0;
+    }
+}
+
+unsigned long va_to_pa(unsigned long va) {
+    printf("va_to_pa(va=0x%lx) called\n", va);
+
+    unsigned long current_pfn = 0;
+    for (int level = 0; level < NUM_LEVELS; ++level) {
+        uint64_t *table_ptr = remap_table(level, current_pfn);
+        if (!table_ptr) {
+            perror("invalid table_ptr");
+            return 0;
+        }
+
+        unsigned long index = get_index(va, level);
+        uint64_t entry = table_ptr[index];
+
+        current_pfn = parse_table_entry(entry);
+        printf(" -> next pfn (level %d): 0x%lx\n", level, current_pfn);
+        munmap(table_ptr, PAGE_SIZE);
+
+        if (!current_pfn) {
+            perror("invalid pfn");
+            return 0;
+        }
+    }
+
+    return (current_pfn << PAGE_SHIFT) | (va & PAGE_MASK);
+}
+
+void map_fault_va_to_pa(unsigned long fault_va, unsigned long pa) {
+    printf("map_fault_va_to_pa(fault_va=0x%lx, pa=0x%lx) called\n", fault_va, pa);
+    unsigned long target_pfn = pa >> PAGE_SHIFT;
+
+    unsigned long current_pfn = 0;
+    for (int level = 0; level < NUM_LEVELS; ++level) {
+        uint64_t *table_ptr = remap_table(level, current_pfn);
+        if (!table_ptr) {
+            printf("invalid table_ptr");
+            return;
+        }
+
+        unsigned long index = get_index(fault_va, level);
+        uint64_t entry = table_ptr[index];
+
+        current_pfn = parse_table_entry(entry);
+        if (!current_pfn) {
+            if (level == 3) {
+                table_ptr[index] = PTE_FLAG | (target_pfn << PTE_FLAG_SHIFT);
+            } else {
+                printf("invalid pfn @ level %d\n", level);
+                return;
+            }
+        }
+        munmap(table_ptr, PAGE_SIZE);
+    }
 }
 
 // Page fault handler thread
@@ -69,6 +183,16 @@ static void *fault_handler(void *arg) {
         unsigned long fault_addr = page_fault_addr & ~(PAGE_SIZE - 1);
 
         // TODO
+        char *template_page = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        template_page[0] = 0;
+        unsigned long pa = va_to_pa((unsigned long)template_page);
+
+        if (!pa) {
+            fprintf(stderr, "va_to_pa failed\n");
+            exit(EXIT_FAILURE);
+        }
+
+        map_fault_va_to_pa(fault_addr, pa);
 
         // Wake up the faulting thread
         struct uffdio_range ur = {

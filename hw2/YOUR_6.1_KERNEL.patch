@@ -38,7 +38,7 @@ index 45fa180cc..ddb48fd54 100644
  /*
   * 32 bit systems traditionally used different
 diff --git a/kernel/sys.c b/kernel/sys.c
-index 5fd54bf0e..007846eba 100644
+index 5fd54bf0e..48000c8a6 100644
 --- a/kernel/sys.c
 +++ b/kernel/sys.c
 @@ -2725,6 +2725,102 @@ SYSCALL_DEFINE1(sysinfo, struct sysinfo __user *, info)
@@ -56,6 +56,7 @@ index 5fd54bf0e..007846eba 100644
 +
 +	pgd_t *pgd_va;
 +	unsigned long pgd_pa;
++
 +	unsigned long pfn_to_map;
 +
 +	if (copy_from_user(&kargs, args, sizeof(kargs))) {
@@ -104,8 +105,7 @@ index 5fd54bf0e..007846eba 100644
 +		pr_info("remap_page_table: target pgd virt=0x%lx, phys=0x%lx, pfn=0x%lx\n",
 +				(unsigned long)pgd_va, pgd_pa, pfn_to_map);
 +	} else {
-+		ret = -EINVAL;
-+		goto out_put_mm;
++		pfn_to_map = kargs.pfn;
 +	}
 +
 +	if (mmap_read_lock_killable(current->mm)) {
