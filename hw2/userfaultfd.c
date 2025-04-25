@@ -102,6 +102,7 @@ void unmap_user_pte() {
         struct pte_tracker_t tracker = trackers[i];
         uint64_t *table_ptr = remap_table(LEVEL_PTE, tracker.table_pfn);
         table_ptr[tracker.table_idx] = tracker.original_entry;
+        munmap(table_ptr, PAGE_SIZE);
     }
     tracker_size = 0;
 }
@@ -147,6 +148,7 @@ void map_fault_va_to_pa(unsigned long fault_va, unsigned long pa) {
         unsigned long index = get_index(fault_va, level);
         uint64_t entry = table_ptr[index];
         current_pfn = parse_table_entry(entry);
+        // printf(" -> next pfn (level %d): 0x%lx\n", level, current_pfn);
 
         if (!current_pfn) {
             assert(level == 3);
@@ -188,9 +190,8 @@ static void *fault_handler(void *arg) {
 
         // TODO
         char *template_page = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        template_page[0] = 0;
+        template_page[0] = 0;  // trigger page fault
         unsigned long pa = va_to_pa((unsigned long)template_page);
-        assert(pa);
         map_fault_va_to_pa(fault_addr, pa);
 
         // Wake up the faulting thread
