@@ -78,10 +78,7 @@ unsigned long get_index(unsigned long va, unsigned int level) {
 
 uint64_t *remap_table(unsigned int level, unsigned long pfn) {
     void *mapped_addr = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    if (mapped_addr == MAP_FAILED) {
-        perror("mmap failed in remap_table");
-        assert(false);
-    }
+    assert(mapped_addr != MAP_FAILED);
 
     struct expose_pgtbl_args args = {
         .pid = getpid(),
@@ -90,11 +87,7 @@ uint64_t *remap_table(unsigned int level, unsigned long pfn) {
         .level = level
     };
 
-    int ret = syscall(__NR_remap_page_table, &args);
-    if (ret != 0) {
-        perror("remap_page_table failed");
-        assert(false);
-    }
+    assert(syscall(__NR_remap_page_table, &args) == 0);
     return (uint64_t *)mapped_addr;
 }
 
@@ -156,18 +149,14 @@ void map_fault_va_to_pa(unsigned long fault_va, unsigned long pa) {
         current_pfn = parse_table_entry(entry);
 
         if (!current_pfn) {
-            if (level == 3) {
-                table_ptr[index] = PTE_FLAG | (target_pfn << NEXT_LVL_ADDR_SHIFT);
-                struct pte_tracker_t tracker = {
-                    .table_pfn = table_pfn,
-                    .table_idx = index,
-                    .original_entry = entry
-                };
-                add_tracker(tracker);
-            } else {
-                printf("invalid pfn @ level %d\n", level);
-                assert(false);
-            }
+            assert(level == 3);
+            table_ptr[index] = PTE_FLAG | (target_pfn << NEXT_LVL_ADDR_SHIFT);
+            struct pte_tracker_t tracker = {
+                .table_pfn = table_pfn,
+                .table_idx = index,
+                .original_entry = entry
+            };
+            add_tracker(tracker);
         }
 
         munmap(table_ptr, PAGE_SIZE);
