@@ -1,19 +1,15 @@
 diff --git a/include/linux/syscalls.h b/include/linux/syscalls.h
-index a34b0f9a9..dd23a8acb 100644
+index a34b0f9a9..14aa1d4fd 100644
 --- a/include/linux/syscalls.h
 +++ b/include/linux/syscalls.h
-@@ -87,6 +87,17 @@ enum landlock_rule_type;
+@@ -87,6 +87,13 @@ enum landlock_rule_type;
  #include <linux/personality.h>
  #include <trace/syscall.h>
  
 +struct expose_pgtbl_args {
-+	// PID of the target task
 +	pid_t pid;
-+	// User-space virtual address to map the page table page
 +	unsigned long remap_vaddr;
-+	// Physical frame number from the previous level page table entry
 +	unsigned long pfn;
-+	// page table level (0: PGD, 1: PUD, 2: PMD, 3: PTE)
 +	unsigned int level;
 +};
 +
@@ -38,10 +34,10 @@ index 45fa180cc..ddb48fd54 100644
  /*
   * 32 bit systems traditionally used different
 diff --git a/kernel/sys.c b/kernel/sys.c
-index 5fd54bf0e..48000c8a6 100644
+index 5fd54bf0e..d6df9f22b 100644
 --- a/kernel/sys.c
 +++ b/kernel/sys.c
-@@ -2725,6 +2725,102 @@ SYSCALL_DEFINE1(sysinfo, struct sysinfo __user *, info)
+@@ -2725,6 +2725,97 @@ SYSCALL_DEFINE1(sysinfo, struct sysinfo __user *, info)
  	return 0;
  }
  
@@ -52,38 +48,36 @@ index 5fd54bf0e..48000c8a6 100644
 +
 +	struct task_struct *target_task = NULL;
 +	struct mm_struct *target_mm = NULL;
-+	struct vm_area_struct *vma = NULL;
++	struct vm_area_struct *remap_vma = NULL;
 +
 +	pgd_t *pgd_va;
 +	unsigned long pgd_pa;
-+
 +	unsigned long pfn_to_map;
 +
 +	if (copy_from_user(&kargs, args, sizeof(kargs))) {
 +		pr_err("remap_page_table: failed to copy arguments from userspace\n");
-+		return -EFAULT;
++		return -EINVAL;
 +	}
 +
-+	pr_info("remap_page_table: called with args:\n");
-+	pr_info("  pid         = %d\n", kargs.pid);
-+	pr_info("  remap_vaddr = 0x%lx\n", kargs.remap_vaddr);
-+	pr_info("  pfn         = 0x%lx\n", kargs.pfn);
-+	pr_info("  level       = %u\n", kargs.level);
++	pr_info("remap_page_table: called pid=%d, remap_vaddr=0x%lx, pfn=0x%lx, level=%u\n",
++			kargs.pid, kargs.remap_vaddr, kargs.pfn, kargs.level);
 +
-+	if (kargs.level > 3) {
-+		pr_err("remap_page_table: invalid level\n");
++	target_task = find_get_task_by_vpid(kargs.pid);
++	if (!target_task) {
++		pr_err("remap_page_table: pid not found\n");
 +		return -EINVAL;
 +	}
 +
 +	if (kargs.remap_vaddr & ~PAGE_MASK) {
 +		pr_err("remap_page_table: remap_vaddr not aligned\n");
-+		return -EINVAL;
++		ret = -EINVAL;
++		goto out_put_task;
 +	}
 +
-+	target_task = find_task_by_vpid(kargs.pid);
-+	if (!target_task) {
-+		pr_err("remap_page_table: target pid not found\n");
-+		return -EINVAL;
++	if (kargs.level > 3) {
++		pr_err("remap_page_table: invalid level\n");
++		ret = -EINVAL;
++		goto out_put_task;
 +	}
 +
 +	target_mm = get_task_mm(target_task);
@@ -102,41 +96,38 @@ index 5fd54bf0e..48000c8a6 100644
 +		}
 +		pgd_pa = virt_to_phys((void *)pgd_va);
 +		pfn_to_map = pgd_pa >> PAGE_SHIFT;
-+		pr_info("remap_page_table: target pgd virt=0x%lx, phys=0x%lx, pfn=0x%lx\n",
++		pr_info("remap_page_table: pgd va=0x%lx, pa=0x%lx, pfn=0x%lx\n",
 +				(unsigned long)pgd_va, pgd_pa, pfn_to_map);
 +	} else {
 +		pfn_to_map = kargs.pfn;
 +	}
 +
 +	if (mmap_read_lock_killable(current->mm)) {
++		pr_err("remap_page_table: mmap_read_lock_killable failed\n");
 +		ret = -EINVAL;
 +		goto out_put_mm;
 +	}
 +
-+	vma = find_vma(current->mm, kargs.remap_vaddr);
-+	if (!vma) {
-+		pr_err("remap_page_table: cannot find vma\n");
-+		mmap_read_unlock(current->mm);
++	remap_vma = find_vma(current->mm, kargs.remap_vaddr);
++	if (!remap_vma) {
++		pr_err("remap_page_table: cannot find vma associated with remap_vaddr\n");
 +		ret = -EINVAL;
-+		goto out_put_mm;
++		goto release_mm_lock;
 +	}
 +
-+	ret = remap_pfn_range(vma, kargs.remap_vaddr, pfn_to_map, PAGE_SIZE, vma->vm_page_prot);
-+	mmap_read_unlock(current->mm);
-+
++	ret = remap_pfn_range(remap_vma, kargs.remap_vaddr, pfn_to_map, PAGE_SIZE, remap_vma->vm_page_prot);
 +	if (ret) {
 +		pr_err("remap_page_table: remap_pfn_range failed\n");
 +	}
 +
++release_mm_lock:
++	mmap_read_unlock(current->mm);
++
 +out_put_mm:
-+	if (target_mm) {
-+		mmput(target_mm);
-+	}
++	mmput(target_mm);
 +
 +out_put_task:
-+	if (target_task) {
-+		//put_task_struct(target_task);
-+	}
++	put_task_struct(target_task);
 +
 +	return ret;
 +}
