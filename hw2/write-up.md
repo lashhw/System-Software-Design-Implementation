@@ -1,8 +1,3 @@
----
-title: write-up
-
----
-
 ## CSIE 5374 Assignment 2 Write-up, Team16
 
 ### Add new system call to Linux
